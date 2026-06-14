@@ -72,6 +72,8 @@ pushd "$install_dir"
     ynh_hide_warnings ynh_exec_as_app env $(cat $install_dir/.env | xargs) LD_PRELOAD=libjemalloc.so bundle exec $install_dir/bin/rails credentials:edit 
 
     ynh_hide_warnings ynh_exec_as_app env $(cat $install_dir/.env | xargs) LD_PRELOAD=libjemalloc.so bundle exec rails db:migrate
+    ynh_exec_as_app env $(cat $install_dir/.env | xargs) LD_PRELOAD=libjemalloc.so bundle exec rails dawarich:backfill_place_names
+    ynh_exec_as_app env $(cat $install_dir/.env | xargs) LD_PRELOAD=libjemalloc.so bundle exec rails dawarich:cleanup_suggested_places
     ynh_hide_warnings ynh_exec_as_app env $(cat $install_dir/.env | xargs) LD_PRELOAD=libjemalloc.so bundle exec rake data:migrate
     ynh_hide_warnings ynh_exec_as_app env $(cat $install_dir/.env | xargs) LD_PRELOAD=libjemalloc.so bundle exec rails db:seed
     ynh_hide_warnings ynh_exec_as_app env $(cat $install_dir/.env | xargs) LD_PRELOAD=libjemalloc.so bundle exec rake assets:precompile
