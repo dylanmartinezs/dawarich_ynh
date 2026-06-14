@@ -20,7 +20,7 @@ code = "https://github.com/Freika/dawarich"
 fund = "https://www.patreon.com/freika"
 
 [integration]
-yunohost = ">= 13.0"
+yunohost = ">= 12.1.15"
 helpers_version = "2.1"
 architectures = "all"
 multi_instance = true
