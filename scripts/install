@@ -100,45 +100,48 @@ pushd "$install_dir"
     ynh_hide_warnings ynh_exec_as_app env $(cat $install_dir/.env | xargs) LD_PRELOAD=libjemalloc.so bundle exec rails dawarich:cleanup_suggested_places
     ynh_hide_warnings ynh_exec_as_app env $(cat $install_dir/.env | xargs) LD_PRELOAD=libjemalloc.so bundle exec rake data:migrate
 
-    # Use RGeo's CAPE_OPEN flag to allow Polygon→MultiPolygon casting
-    ynh_hide_warnings ynh_exec_as_app env $(cat $install_dir/.env | xargs) \
-    LD_PRELOAD=libjemalloc.so bundle exec rails runner "
-        if Country.none?
-        require 'rgeo/geo_json'
-        countries_json = Oj.load(File.read(Rails.root.join('lib/assets/countries.geojson')))
-        factory = RGeo::Geos.factory(srid: 4326, uses_lenient_multi_polygon_assertions: true)
-        countries_multi_polygon = RGeo::GeoJSON.decode(countries_json.to_json, geo_factory: factory)
-        ActiveRecord::Base.transaction do
-            countries_multi_polygon.each do \|country\|
-            Country.create!(
-                name: country.properties['name'],
-                iso_a2: country.properties['ISO3166-1-Alpha-2'],
-                iso_a3: country.properties['ISO3166-1-Alpha-3'],
-                geom: country.geometry
-            )
-            end
-        end
-        end
-    "
-
-    # Seed default tags (nice-to-have)
-    ynh_hide_warnings ynh_exec_as_app env $(cat $install_dir/.env | xargs) \
-    LD_PRELOAD=libjemalloc.so bundle exec rails runner "
-        if Tag.none?
-        default_tags = [
-            { name: 'Home', color: '#FF5733', icon: '🏡' },
-            { name: 'Work', color: '#33FF57', icon: '💼' },
-            { name: 'Favorite', color: '#3357FF', icon: '⭐' },
-            { name: 'Travel Plans', color: '#F1C40F', icon: '🗺️' }
-        ]
-        User.find_each do \|user\|
-            default_tags.each do \|tag_attrs\|
-            Tag.create!(tag_attrs.merge(user: user))
-            end
-        end
-        end
-    "
     
+    # Write the seed script to a temp file
+    cat > $install_dir/tmp_seed.rb << 'SEED_EOF'
+    if Country.none?
+    require 'rgeo/geo_json'
+    countries_json = Oj.load(File.read(Rails.root.join('lib/assets/countries.geojson')))
+    factory = RGeo::Geos.factory(srid: 4326, uses_lenient_multi_polygon_assertions: true)
+    countries_multi_polygon = RGeo::GeoJSON.decode(countries_json.to_json, geo_factory: factory)
+    ActiveRecord::Base.transaction do
+        countries_multi_polygon.each do |country|
+        Country.create!(
+            name: country.properties['name'],
+            iso_a2: country.properties['ISO3166-1-Alpha-2'],
+            iso_a3: country.properties['ISO3166-1-Alpha-3'],
+            geom: country.geometry
+        )
+        end
+    end
+    end
+
+    if Tag.none?
+    default_tags = [
+        { name: 'Home', color: '#FF5733', icon: '🏡' },
+        { name: 'Work', color: '#33FF57', icon: '💼' },
+        { name: 'Favorite', color: '#3357FF', icon: '⭐' },
+        { name: 'Travel Plans', color: '#F1C40F', icon: '🗺️' }
+    ]
+    User.find_each do |user|
+        default_tags.each do |tag_attrs|
+        Tag.create!(tag_attrs.merge(user: user))
+        end
+    end
+    end
+    SEED_EOF
+
+    # Run it
+    ynh_hide_warnings ynh_exec_as_app env $(cat $install_dir/.env | xargs) \
+    LD_PRELOAD=libjemalloc.so bundle exec rails runner $install_dir/tmp_seed.rb
+
+    # Clean up
+    ynh_safe_rm "$install_dir/tmp_seed.rb"
+
     ynh_hide_warnings ynh_exec_as_app env $(cat $install_dir/.env | xargs) LD_PRELOAD=libjemalloc.so bundle exec rake assets:precompile
 
     ynh_safe_rm vendor/bundle/ruby/$ruby_version/cache/*.gem
