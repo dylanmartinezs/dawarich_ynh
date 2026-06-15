@@ -27,6 +27,14 @@ db_user=$app
 ynh_app_setting_set --app=$app --key=db_name --value=$db_name
 ynh_app_setting_set --app=$app --key=db_user --value=$db_user
 
+# Detect PG 17 port for DATABASE_PORT in .env
+pg17_port=$(pg_lsclusters | grep "17.*main" | awk '{print $3}')
+if [ -n "$pg17_port" ]; then
+    ynh_app_setting_set --app=$app --key=pg_port --value=$pg17_port
+else
+    ynh_app_setting_set --app=$app --key=pg_port --value=5432
+fi
+
 #=================================================
 # DOWNLOAD, CHECK AND UNPACK SOURCE
 #=================================================
@@ -44,9 +52,9 @@ ynh_script_progression "Configuring the PostgreSQL database..."
 # YunoHost's [resources.db] created the DB on the default cluster (port 5432).
 # On fresh Trixie, that's PG 17 — nothing to do.
 # On upgraded Bookworm→Trixie, that's PG 15 — need to migrate to PG 17.
-pg17_port=$(pg_lsclusters | grep "17.*main" | awk '{print $3}')
+pg_port=$(ynh_app_setting_get --app=$app --key=pg_port)
 
-if [ "$pg17_port" = "5432" ]; then
+if [ "$pg_port" = "5432" ]; then
     # PG 17 is the default cluster — DB already created correctly by [resources.db]
     ynh_app_setting_set --app=$app --key=pg_port --value=5432
 
