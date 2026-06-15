@@ -193,7 +193,12 @@ ynh_systemctl --service=${app}-sidekiq --action="start" --log_path=/var/log/$app
 # END OF SCRIPT
 #=================================================
 
-# Ensure nginx config is complete (safety net for resource pipeline edge cases)
-sudo yunohost tools regen-conf nginx
+# Safety net: ensure the domain's nginx server block exists
+# (can be missing after failed install cleanups or resource pipeline issues)
+domain_conf="/etc/nginx/conf.d/$domain.conf"
+if [ ! -f "$domain_conf" ]; then
+    ynh_script_progression "Regenerating nginx configuration for $domain..."
+    sudo yunohost tools regen-conf nginx
+fi
 
 ynh_script_progression "Installation of $app completed"
