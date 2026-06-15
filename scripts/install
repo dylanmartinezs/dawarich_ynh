@@ -193,4 +193,7 @@ ynh_systemctl --service=${app}-sidekiq --action="start" --log_path=/var/log/$app
 # END OF SCRIPT
 #=================================================
 
+# Ensure nginx config is complete (safety net for resource pipeline edge cases)
+sudo yunohost tools regen-conf nginx
+
 ynh_script_progression "Installation of $app completed"
