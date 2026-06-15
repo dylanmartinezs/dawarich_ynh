@@ -36,6 +36,10 @@ chown -R "$app:www-data" "$install_dir"
 #=================================================
 ynh_script_progression "Configuring the PostgreSQL database..."
 
+# After the config files are added, before any DB operations:
+ynh_psql_db_shell <<< "ALTER DATABASE template1 REFRESH COLLATION VERSION;" 2>/dev/null || true
+ynh_psql_db_shell <<< "ALTER DATABASE postgres REFRESH COLLATION VERSION;" 2>/dev/null || true
+
 #Create postgis extension
 ynh_psql_db_shell <<< "ALTER USER $db_user WITH SUPERUSER;"
 ynh_psql_db_shell <<< "CREATE EXTENSION IF NOT EXISTS postgis;"
