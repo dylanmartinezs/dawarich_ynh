@@ -80,6 +80,8 @@ else
     sudo -u postgres pg_dump -p 5432 $db_name > /tmp/${db_name}_dump.sql 2>/dev/null || true
     sudo -u postgres psql -p 5432 -c "DROP DATABASE $db_name;"
     sudo -u postgres psql -p 5432 -c "DROP USER $db_user;"
+    sudo -u postgres psql -p $pg17_port -c "DROP DATABASE IF EXISTS $db_name;" 2>/dev/null || true
+    sudo -u postgres psql -p $pg17_port -c "DROP USER IF EXISTS $db_user;" 2>/dev/null || true
     sudo -u postgres psql -p $pg17_port -c "CREATE USER $db_user WITH PASSWORD '$db_pwd';"
     sudo -u postgres psql -p $pg17_port -c "CREATE DATABASE $db_name OWNER $db_user;"
     if [ -s /tmp/${db_name}_dump.sql ]; then
