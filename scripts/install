@@ -130,6 +130,9 @@ ynh_safe_rm "$install_dir"/screenshots
 #=================================================
 ynh_script_progression "Adding system configurations related to $app..."
 
+# Ensure the nginx app config directory exists
+mkdir -p "/etc/nginx/conf.d/$domain.d/"
+
 # Use logrotate to manage application logfiles
 ynh_config_add_logrotate
 mkdir -p /var/log/$app
