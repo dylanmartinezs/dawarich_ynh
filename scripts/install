@@ -41,29 +41,49 @@ chown -R "$app:www-data" "$install_dir"
 #=================================================
 ynh_script_progression "Configuring the PostgreSQL database..."
 
-# Find PG 17 port (5432 on fresh Trixie, 5433 on upgraded Bookworm→Trixie)
-pg_port=$(pg_lsclusters | grep "17.*main" | awk '{print $3}')
-if [ -z "$pg_port" ]; then
-    ynh_die "PostgreSQL 17 is required but not found. Please install it first."
+# YunoHost's [resources.db] created the DB on the default cluster (port 5432).
+# On fresh Trixie, that's PG 17 — nothing to do.
+# On upgraded Bookworm→Trixie, that's PG 15 — need to migrate to PG 17.
+pg17_port=$(pg_lsclusters | grep "17.*main" | awk '{print $3}')
+
+if [ "$pg17_port" = "5432" ]; then
+    # PG 17 is the default cluster — DB already created correctly by [resources.db]
+    ynh_app_setting_set --app=$app --key=pg_port --value=5432
+
+    # Fix collation version mismatch after major Debian upgrade
+    ynh_psql_db_shell <<< "ALTER DATABASE template1 REFRESH COLLATION VERSION;" 2>/dev/null || true
+    ynh_psql_db_shell <<< "ALTER DATABASE postgres REFRESH COLLATION VERSION;" 2>/dev/null || true
+
+    # Create PostGIS extension
+    ynh_psql_db_shell <<< "ALTER USER $db_user WITH SUPERUSER;"
+    ynh_psql_db_shell <<< "CREATE EXTENSION IF NOT EXISTS postgis;"
+    ynh_psql_db_shell <<< "ALTER USER $db_user WITH NOSUPERUSER;"
+
+else
+    # PG 15 is on port 5432, PG 17 on $pg17_port — migrate the DB
+    db_pwd=$(ynh_app_setting_get --app=$app --key=db_pwd)
+    ynh_app_setting_set --app=$app --key=pg_port --value=$pg17_port
+
+    # Fix collation version mismatch on PG 17
+    sudo -u postgres psql -p $pg17_port -c "ALTER DATABASE template1 REFRESH COLLATION VERSION;" 2>/dev/null || true
+    sudo -u postgres psql -p $pg17_port -c "ALTER DATABASE postgres REFRESH COLLATION VERSION;" 2>/dev/null || true
+
+    # Migrate: dump from PG 15, recreate on PG 17
+    sudo -u postgres pg_dump -p 5432 $db_name > /tmp/${db_name}_dump.sql 2>/dev/null || true
+    sudo -u postgres psql -p 5432 -c "DROP DATABASE $db_name;"
+    sudo -u postgres psql -p 5432 -c "DROP USER $db_user;"
+    sudo -u postgres psql -p $pg17_port -c "CREATE USER $db_user WITH PASSWORD '$db_pwd';"
+    sudo -u postgres psql -p $pg17_port -c "CREATE DATABASE $db_name OWNER $db_user;"
+    if [ -s /tmp/${db_name}_dump.sql ]; then
+        sudo -u postgres psql -p $pg17_port -d $db_name < /tmp/${db_name}_dump.sql 2>/dev/null || true
+        sudo rm -f /tmp/${db_name}_dump.sql
+    fi
+
+    # Create PostGIS extension on PG 17
+    sudo -u postgres psql -p $pg17_port -c "ALTER USER $db_user WITH SUPERUSER;"
+    sudo -u postgres psql -p $pg17_port -c "CREATE EXTENSION IF NOT EXISTS postgis;" $db_name
+    sudo -u postgres psql -p $pg17_port -c "ALTER USER $db_user WITH NOSUPERUSER;"
 fi
-ynh_app_setting_set --app=$app --key=pg_port --value=$pg_port
-
-# Fix collation version mismatch after major Debian upgrade
-sudo -u postgres psql -p $pg_port -c "ALTER DATABASE template1 REFRESH COLLATION VERSION;" 2>/dev/null || true
-sudo -u postgres psql -p $pg_port -c "ALTER DATABASE postgres REFRESH COLLATION VERSION;" 2>/dev/null || true
-
-# Create database and user on PG 17
-db_pwd=$(ynh_string_random --length=30)
-ynh_app_setting_set --app=$app --key=db_pwd --value=$db_pwd
-sudo -u postgres psql -p $pg_port -c "DROP DATABASE IF EXISTS $db_name;" 2>/dev/null || true
-sudo -u postgres psql -p $pg_port -c "DROP USER IF EXISTS $db_user;" 2>/dev/null || true
-sudo -u postgres psql -p $pg_port -c "CREATE USER $db_user WITH PASSWORD '$db_pwd';"
-sudo -u postgres psql -p $pg_port -c "CREATE DATABASE $db_name OWNER $db_user;"
-
-# Create PostGIS extension
-sudo -u postgres psql -p $pg_port -c "ALTER USER $db_user WITH SUPERUSER;"
-sudo -u postgres psql -p $pg_port -c "CREATE EXTENSION IF NOT EXISTS postgis;" $db_name
-sudo -u postgres psql -p $pg_port -c "ALTER USER $db_user WITH NOSUPERUSER;"
 
 #=================================================
 # APP INITIAL CONFIGURATION
