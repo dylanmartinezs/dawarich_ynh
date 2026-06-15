@@ -94,8 +94,8 @@ ram.runtime = "50M"
     "redis-server", "redis-tools",
 ]
 
-    [resources.database]
-    type = "postgresql"
+    #[resources.database]
+    #type = "postgresql"
 
     [resources.nodejs]
     version = "18.17.1"

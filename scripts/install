@@ -17,10 +17,15 @@ key=$(ynh_string_random --length=45 | base64)
 ynh_app_setting_set --key=key --value=$key
 
 secret_key_base=$(ynh_string_random --length=45 | base64)
-ynh_app_setting_set --key=ksecret_key_base --value=$secret_key_base
+ynh_app_setting_set --key=secret_key_base --value=$secret_key_base
 
 redis_db=$(ynh_redis_get_free_db)
 ynh_app_setting_set --key=redis_db --value=$redis_db
+
+db_name=$app
+db_user=$app
+ynh_app_setting_set --app=$app --key=db_name --value=$db_name
+ynh_app_setting_set --app=$app --key=db_user --value=$db_user
 
 #=================================================
 # DOWNLOAD, CHECK AND UNPACK SOURCE
@@ -36,14 +41,27 @@ chown -R "$app:www-data" "$install_dir"
 #=================================================
 ynh_script_progression "Configuring the PostgreSQL database..."
 
-# After the config files are added, before any DB operations:
-ynh_psql_db_shell <<< "ALTER DATABASE template1 REFRESH COLLATION VERSION;" 2>/dev/null || true
-ynh_psql_db_shell <<< "ALTER DATABASE postgres REFRESH COLLATION VERSION;" 2>/dev/null || true
+# Find PG 17 port (5432 on fresh Trixie, 5433 on upgraded Bookworm→Trixie)
+pg_port=$(pg_lsclusters | grep "17.*main" | awk '{print $3}')
+if [ -z "$pg_port" ]; then
+    ynh_die "PostgreSQL 17 is required but not found. Please install it first."
+fi
+ynh_app_setting_set --app=$app --key=pg_port --value=$pg_port
 
-#Create postgis extension
-ynh_psql_db_shell <<< "ALTER USER $db_user WITH SUPERUSER;"
-ynh_psql_db_shell <<< "CREATE EXTENSION IF NOT EXISTS postgis;"
-ynh_psql_db_shell <<< "ALTER USER $db_user WITH NOSUPERUSER;"
+# Fix collation version mismatch after major Debian upgrade
+sudo -u postgres psql -p $pg_port -c "ALTER DATABASE template1 REFRESH COLLATION VERSION;" 2>/dev/null || true
+sudo -u postgres psql -p $pg_port -c "ALTER DATABASE postgres REFRESH COLLATION VERSION;" 2>/dev/null || true
+
+# Create database and user on PG 17
+db_pwd=$(ynh_string_random --length=30)
+ynh_app_setting_set --app=$app --key=db_pwd --value=$db_pwd
+sudo -u postgres psql -p $pg_port -c "CREATE USER $db_user WITH PASSWORD '$db_pwd';"
+sudo -u postgres psql -p $pg_port -c "CREATE DATABASE $db_name OWNER $db_user;"
+
+# Create PostGIS extension
+sudo -u postgres psql -p $pg_port -c "ALTER USER $db_user WITH SUPERUSER;"
+sudo -u postgres psql -p $pg_port -c "CREATE EXTENSION IF NOT EXISTS postgis;" $db_name
+sudo -u postgres psql -p $pg_port -c "ALTER USER $db_user WITH NOSUPERUSER;"
 
 #=================================================
 # APP INITIAL CONFIGURATION
@@ -73,11 +91,11 @@ pushd "$install_dir"
     source "$install_dir/.env"
     set +o allexport
 
-    ynh_hide_warnings ynh_exec_as_app env $(cat $install_dir/.env | xargs) LD_PRELOAD=libjemalloc.so bundle exec $install_dir/bin/rails credentials:edit 
+    #ynh_hide_warnings ynh_exec_as_app env $(cat $install_dir/.env | xargs) LD_PRELOAD=libjemalloc.so bundle exec $install_dir/bin/rails credentials:edit 
 
     ynh_hide_warnings ynh_exec_as_app env $(cat $install_dir/.env | xargs) LD_PRELOAD=libjemalloc.so bundle exec rails db:migrate
-    ynh_exec_as_app env $(cat $install_dir/.env | xargs) LD_PRELOAD=libjemalloc.so bundle exec rails dawarich:backfill_place_names
-    ynh_exec_as_app env $(cat $install_dir/.env | xargs) LD_PRELOAD=libjemalloc.so bundle exec rails dawarich:cleanup_suggested_places
+    ynh_hide_warnings ynh_exec_as_app env $(cat $install_dir/.env | xargs) LD_PRELOAD=libjemalloc.so bundle exec rails dawarich:backfill_place_names
+    ynh_hide_warnings ynh_exec_as_app env $(cat $install_dir/.env | xargs) LD_PRELOAD=libjemalloc.so bundle exec rails dawarich:cleanup_suggested_places
     ynh_hide_warnings ynh_exec_as_app env $(cat $install_dir/.env | xargs) LD_PRELOAD=libjemalloc.so bundle exec rake data:migrate
     #ynh_hide_warnings ynh_exec_as_app env $(cat $install_dir/.env | xargs) LD_PRELOAD=libjemalloc.so bundle exec rails db:seed
     ynh_hide_warnings ynh_exec_as_app env $(cat $install_dir/.env | xargs) LD_PRELOAD=libjemalloc.so bundle exec rake assets:precompile
